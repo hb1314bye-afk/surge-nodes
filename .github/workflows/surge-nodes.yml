@@ -1,0 +1,40 @@
+name: Build Surge free-node subscription
+
+# 每 6 小时把两个免费节点源（Epodonios/v2ray-configs、MustafaBaqer/VestraNet-Nodes）
+# 转成 Surge 格式，输出 surge-nodes.conf 提交回本仓库。
+# 只保留 Surge 原生可用的 vmess / trojan / ss；vless / ssr / reality 不取。
+# push 触发仅用于首次引导运行（限定本 workflow 文件路径），验证后移除。
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/surge-nodes.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Convert feeds to Surge format
+        run: python3 convert.py
+
+      - name: Publish subscription (only when non-empty)
+        run: |
+          COUNT=$(grep -cE '^[^#].* = (vmess|trojan|ss), ' surge-nodes.conf || true)
+          echo "proxy lines in surge-nodes.conf: $COUNT"
+          if [ "$COUNT" -le 0 ]; then
+            echo "::error::0 usable proxy lines - refusing to publish an empty subscription; keeping the previous one"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add surge-nodes.conf
+          git diff --cached --quiet || git commit -m "chore: refresh Surge free nodes $(date -u +%F_%T)"
+          git push
